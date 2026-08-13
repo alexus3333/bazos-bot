@@ -1,9 +1,22 @@
 import os
 import re
 import time
+import threading
 import requests
 from bs4 import BeautifulSoup
 import google.generativeai as genai
+from flask import Flask
+
+# Flask server pre Render (aby služba nezdochla)
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot beží!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 # ==================== KONFIGURÁCIA ====================
 TELEGRAM_BOT_TOKEN = "8560776124:AAGGfg1rud3GL11WmUKGVKA9kzDmtVfP_BM"
@@ -13,7 +26,6 @@ GEMINI_API_KEY = "AQ.Ab8RN6JIDC-0Gtx-63GsbRGgpURBm1M2qdUIR9Ug1V4N6WZIQ"
 MAX_PRICE = 500  # Maximálna cena v EUR
 SEEN_FILE = "seen_ids.txt"
 
-# Nastavenie Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
@@ -21,8 +33,6 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Accept-Language": "sk-SK,sk;q=0.9,en-US;q=0.8,en;q=0.7"
 }
-
-# ==================== POMOCNÉ FUNKCIE ====================
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -43,7 +53,6 @@ def save_seen_id(item_id):
         f.write(f"{item_id}\n")
 
 def check_bazos():
-    # URL pre vyhľadávanie bicyklov na Bazoši
     url = "https://sport.bazos.sk/?hledat=bicykel"
     try:
         session = requests.Session()
@@ -54,7 +63,6 @@ def check_bazos():
             return
 
         soup = BeautifulSoup(response.text, "html.parser")
-        
         inzeraty = soup.find_all("div", class_="inzeraty")
         if not inzeraty:
             inzeraty = soup.find_all("div", class_="inzeratydirekt")
@@ -85,7 +93,6 @@ def check_bazos():
 
             price_tag = inz.find("div", class_="inzeratycena")
             price_text = price_tag.text.strip() if price_tag else ""
-            
             price_match = re.search(r"(\d[\d\s]*)", price_text.replace(" ", ""))
             price = int(price_match.group(1)) if price_match else 0
 
@@ -113,10 +120,18 @@ def check_bazos():
     except Exception as e:
         print(f"Chyba pri kontrole: {e}")
 
-# ==================== HLAVNÝ CYKLUS ====================
-if __name__ == "__main__":
+def bot_loop():
     print(f"Bot bol spustený a sleduje bicykle do {MAX_PRICE} EUR...")
     while True:
         print("Kontrolujem Bazoš...")
         check_bazos()
         time.sleep(120)
+
+if __name__ == "__main__":
+    # Spustenie bota v samostatnom vlákne
+    t = threading.Thread(target=bot_loop)
+    t.daemon = True
+    t.start()
+    
+    # Spustenie Flask servera pre Render
+    run_flask()
